@@ -1,0 +1,8 @@
+{
+  "quality": "2k",
+  "captions": true,
+  "caption_lowercase": false,
+  "ink_px": 8,
+  "whisper_model": "turbo",
+  "work_folder": "/home/hatch/workspace/RicksClips"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "ricksclips-engine",
+  "displayName": "RicksClips-Engine",
+  "version": "3.0.1",
+  "description": "Make vertical 9:16 animated story shorts end to end in Claude Code: three fact-checked topics, the script, your own voice file, word timing, a toon 3D world with flat characters and animals, code-made music and sound, captions, render and a self-check.",
+  "keywords": [
+    "video",
+    "shorts",
+    "animation",
+    "three.js",
+    "remotion",
+    "storytelling"
+  ]
+}

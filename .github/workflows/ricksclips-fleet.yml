@@ -1,0 +1,114 @@
+# RicksClips-Engine fleet render — Shackleton short-1 ("The Fourth Man")
+# Splits the 1889-frame short across 20 GitHub Actions runners (frame-range chunks),
+# then concatenates the chunks and muxes the finished mix.wav as the audio track.
+# Manual trigger only. Nothing runs on push.
+name: RicksClips Fleet Render — Shackleton short-1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    name: chunk ${{ matrix.chunk }} (frames ${{ matrix.start }}-${{ matrix.end }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {chunk: "00", start: 0, end: 94}
+          - {chunk: "01", start: 95, end: 189}
+          - {chunk: "02", start: 190, end: 284}
+          - {chunk: "03", start: 285, end: 379}
+          - {chunk: "04", start: 380, end: 474}
+          - {chunk: "05", start: 475, end: 569}
+          - {chunk: "06", start: 570, end: 664}
+          - {chunk: "07", start: 665, end: 759}
+          - {chunk: "08", start: 760, end: 854}
+          - {chunk: "09", start: 855, end: 948}
+          - {chunk: "10", start: 949, end: 1042}
+          - {chunk: "11", start: 1043, end: 1136}
+          - {chunk: "12", start: 1137, end: 1230}
+          - {chunk: "13", start: 1231, end: 1324}
+          - {chunk: "14", start: 1325, end: 1418}
+          - {chunk: "15", start: 1419, end: 1512}
+          - {chunk: "16", start: 1513, end: 1606}
+          - {chunk: "17", start: 1607, end: 1700}
+          - {chunk: "18", start: 1701, end: 1794}
+          - {chunk: "19", start: 1795, end: 1888}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Cache engine node_modules (includes the downloaded render browser)
+        uses: actions/cache@v4
+        with:
+          path: work/.engine/node_modules
+          key: ricksclips-engine-${{ runner.os }}-${{ hashFiles('plugin/scripts/lib/pins.mjs') }}
+      - name: Install pinned Remotion tools into work/.engine
+        run: node plugin/scripts/init-workspace.mjs npm --work "$GITHUB_WORKSPACE/work"
+      - name: Download render browser
+        run: node plugin/scripts/init-workspace.mjs browser --work "$GITHUB_WORKSPACE/work"
+      - name: Render chunk ${{ matrix.chunk }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/chunks"
+          node plugin/scripts/render.mjs video "$GITHUB_WORKSPACE/work/short-1" --work "$GITHUB_WORKSPACE/work" --frames ${{ matrix.start }}-${{ matrix.end }} --out "$GITHUB_WORKSPACE/chunks/chunk-${{ matrix.chunk }}.mp4"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ matrix.chunk }}
+          path: chunks/chunk-${{ matrix.chunk }}.mp4
+          if-no-files-found: error
+
+  assemble:
+    name: assemble final.mp4
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure ffmpeg
+        run: command -v ffmpeg >/dev/null || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-*
+          path: chunks
+          merge-multiple: true
+      - name: Verify 20 chunks and total frame count
+        run: |
+          set -euo pipefail
+          count=$(ls chunks/chunk-*.mp4 | wc -l)
+          echo "chunk files: $count"
+          [ "$count" -eq 20 ]
+          total=0
+          for f in chunks/chunk-*.mp4; do
+            n=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$f")
+            echo "$f frames=$n"
+            total=$((total + n))
+          done
+          echo "total frames: $total (expected 1889)"
+          [ "$total" -eq 1889 ]
+      - name: Concatenate chunks (stream copy; re-encode fallback)
+        run: |
+          set -euo pipefail
+          for f in chunks/chunk-*.mp4; do echo "file '$PWD/$f'"; done > concat-list.txt
+          cat concat-list.txt
+          if ! ffmpeg -y -f concat -safe 0 -i concat-list.txt -c copy video.mp4; then
+            echo "::warning::stream-copy concat failed; falling back to re-encode"
+            ffmpeg -y -f concat -safe 0 -i concat-list.txt -c:v libx264 -crf 17 -preset medium -pix_fmt yuv420p -an video.mp4
+          fi
+      - name: Mux final audio (work/short-1/audio/mix.wav, trimmed to video length)
+        run: |
+          set -euo pipefail
+          DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 video.mp4)
+          echo "video duration: $DUR"
+          ffmpeg -y -i video.mp4 -i work/short-1/audio/mix.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 256k -t "$DUR" final.mp4
+          ffprobe -v error -show_entries format=duration -show_entries stream=codec_name,width,height -of default=nw=1 final.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shackleton-short1-final
+          path: final.mp4
+          if-no-files-found: error
