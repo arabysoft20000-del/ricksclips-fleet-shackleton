@@ -48,11 +48,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: work/.engine/node_modules
-          key: ricksclips-engine-${{ runner.os }}-${{ hashFiles('plugin/scripts/lib/pins.mjs') }}
+          key: ricksclips-engine-v2-${{ runner.os }}-${{ hashFiles('plugin/scripts/lib/pins.mjs') }}
       - name: Install pinned Remotion tools into work/.engine
         run: node plugin/scripts/init-workspace.mjs npm --work "$GITHUB_WORKSPACE/work"
       - name: Download render browser
-        run: node plugin/scripts/init-workspace.mjs browser --work "$GITHUB_WORKSPACE/work"
+        # Remotion's ensureBrowser resolves node_modules/.remotion relative to the
+        # current working directory, and render.mjs runs with cwd=work/.engine —
+        # so the download must happen from inside work/.engine or the render step
+        # reports "The render browser is not installed" (run 45702727164).
+        working-directory: work/.engine
+        run: node "$GITHUB_WORKSPACE/plugin/scripts/init-workspace.mjs" browser --work "$GITHUB_WORKSPACE/work"
       - name: Render chunk ${{ matrix.chunk }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/chunks"
